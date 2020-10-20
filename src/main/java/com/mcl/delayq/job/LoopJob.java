@@ -10,6 +10,7 @@ import com.mcl.delayq.entity.DelayTask;
 import com.mcl.delayq.service.DelayTaskService;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import java.util.Collections;
 import java.util.Date;
@@ -22,7 +23,16 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class LoopJob implements InitializingBean {
 
-    private Long interval = 5L; // 循环间隔
+    private static final Long interval = 5L; // 循环间隔(单位:min)
+
+    // 秒
+    @Value("${biz.loop.interval:10}")
+    private Integer loopInterval;
+
+    // 分钟
+    @Value("${biz.task.step:10}")
+    private Integer taskStep;
+
 
     @Autowired
     private DelayTaskService delayTaskService;
@@ -34,31 +44,31 @@ public class LoopJob implements InitializingBean {
             public void run() {
                 IPage page = new Page(1,10);
                 do{
-                    page = recursionHandle(page);
+                    page = handle(page);
                 } while (page.getCurrent() < page.getPages());
             }
-        },0,interval, TimeUnit.SECONDS);
+        },0,loopInterval, TimeUnit.SECONDS);
     }
 
-    private IPage recursionHandle(IPage page){
-        IPage<DelayTask> delayTaskPage = delayTaskService.selectByPageWithinMinutes(page,5);
+    private IPage handle(IPage page){
+        IPage<DelayTask> delayTaskPage = delayTaskService.selectByPageWithinMinutes(page,taskStep);
         if (PageUtils.isEmpty(delayTaskPage)){
             return new Page(1,10);
         }
         long timestamp = new Date().getTime();
         delayTaskPage.getRecords().forEach(delayTask -> {
             ThreadPooler.scheduleAsyncRunnableOnDaemon(()->{
-                System.out.println("任务期望时间:"+delayTask.getExeTime().getTime()+"   任务执行时间:"+timestamp);
                 try {
-//                    String body = HttpRequest.post(delayTask.getBizCallbackUrl())
-//                            .timeout(10)
-//                            .body(delayTask.getBizData()).contentType("application/json;charset=UTF-8").execute().body();
-//                    System.out.println("返回:"+body);
+                    String body = HttpRequest.post(delayTask.getBizCallbackUrl())
+                            .timeout(10)
+                            .body(delayTask.getBizData()).contentType("application/json;charset=UTF-8").execute().body();
+                    if ("SUCCESS".equals(body)){
+                        delayTaskService.deleteByIds(Collections.singletonList(delayTask.getId()));
+                    }
                 } catch (Exception e) {
                     e.printStackTrace();
                     // 忽略异常
                 }
-                delayTaskService.deleteByIds(Collections.singletonList(delayTask.getId()));
             },delayTask.getExeTime().getTime()-timestamp,TimeUnit.MILLISECONDS);
         });
         return delayTaskPage;
