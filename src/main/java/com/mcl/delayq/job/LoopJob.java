@@ -60,7 +60,7 @@ public class LoopJob implements InitializingBean {
             ThreadPooler.scheduleAsyncRunnableOnDaemon(()->{
                 try {
                     String body = HttpRequest.post(delayTask.getBizCallbackUrl())
-                            .timeout(10)
+                            .timeout(1000)
                             .body(delayTask.getBizData()).contentType("application/json;charset=UTF-8").execute().body();
                     if ("SUCCESS".equals(body)){
                         delayTaskService.deleteByIds(Collections.singletonList(delayTask.getId()));
